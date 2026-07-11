@@ -1,0 +1,9 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Lint uniquement (pas ruff-format) : le style existant du code n'est
+      # pas passé au formateur par défaut de ruff pour éviter un diff massif
+      # sans rapport avec le contenu (voir CLAUDE.md).
+      - id: ruff
+        args: [--fix]

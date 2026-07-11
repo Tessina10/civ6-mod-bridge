@@ -1,0 +1,22 @@
+# Artefacts PyInstaller (générés par `pyinstaller *.spec`, pas du code source)
+build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Config locale (clé API Pixeldrain, écrite par steam_lister/config.py dans %APPDATA%,
+# gardé ici par précaution si un jour un chemin local était utilisé)
+*.local.json
+
+# Éditeurs / OS
+.vscode/
+.idea/
+Thumbs.db

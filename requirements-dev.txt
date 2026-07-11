@@ -1,0 +1,7 @@
+# Dépendances de dev uniquement (aucune dépendance runtime : les deux outils
+# restent 100% stdlib, y compris pour les appels réseau via urllib).
+# Installation : pip install -r requirements-dev.txt
+pyinstaller
+ruff
+pytest
+pre-commit

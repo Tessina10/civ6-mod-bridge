@@ -1,0 +1,13 @@
+# Config d'outils de dev partagée pour les deux mini-projets (steam_lister/,
+# epic_mod_manager/). Ce fichier ne fait pas de ce dépôt un package Python
+# installable : chaque outil reste un script autonome (voir CLAUDE.md).
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+exclude = ["build", "dist"]
+
+[tool.ruff.lint]
+# Règles par défaut de ruff (pyflakes + une partie de pycodestyle) : pas de
+# jeu de règles étendu pour rester proche du style existant du code.
+select = ["E", "F", "W"]
