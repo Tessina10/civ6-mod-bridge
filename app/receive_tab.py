@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -47,6 +48,17 @@ class ReceiveTab(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+
+        # Bouton "Options avancées" en tout premier, juste sous la barre d'onglets.
+        advanced_row = QHBoxLayout()
+        self.advanced_button = QPushButton(i18n.tr("menu.advanced"))
+        self.advanced_menu = QMenu(self)
+        self.advanced_menu.addAction(i18n.tr("installed.menu_item"), self.show_installed_mods)
+        self.advanced_menu.addAction(i18n.tr("receive.import_menu_item"), self.import_zip)
+        self.advanced_button.setMenu(self.advanced_menu)
+        advanced_row.addWidget(self.advanced_button)
+        advanced_row.addStretch()
+        layout.addLayout(advanced_row)
 
         top_row = QHBoxLayout()
         top_row.addWidget(QLabel(i18n.tr("receive.folder_label")))

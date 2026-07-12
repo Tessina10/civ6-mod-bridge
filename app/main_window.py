@@ -1,14 +1,15 @@
-"""Fenêtre principale : onglets Envoyer/Recevoir (avec le sélecteur de langue
-dans leur coin, car général et indépendant de l'onglet actif), et juste en
-dessous un bouton "Options avancées" (menu contextuel qui change selon
-l'onglet actif) — volontairement pas dans la barre de menu Qt tout en haut,
-qui reste au-dessus de tout et ne peut pas être repositionnée sous les onglets."""
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QMainWindow, QMenu, QPushButton, QTabWidget, QVBoxLayout, QWidget
+"""Fenêtre principale : onglets Envoyer/Recevoir, avec le sélecteur de langue
+dans leur coin (général, indépendant de l'onglet actif). Le bouton "Options
+avancées" vit dans chaque onglet (voir send_tab.py/receive_tab.py) plutôt
+qu'ici, pour qu'il apparaisse juste sous la barre d'onglets et non tout en
+bas de la fenêtre (un QTabWidget occupe tout l'espace vertical disponible :
+un widget ajouté après lui dans un layout se retrouve poussé au bas de la
+fenêtre, pas juste sous la barre d'onglets)."""
+from PySide6.QtWidgets import QComboBox, QMainWindow, QTabWidget
 
 import i18n
 from receive_tab import ReceiveTab
 from send_tab import SendTab
-from uploads_manager import UploadsManagerDialog
 
 SEND_TAB_INDEX = 0
 RECEIVE_TAB_INDEX = 1
@@ -41,28 +42,9 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.send_tab, i18n.tr("tab.send"))
         self.tabs.addTab(self.receive_tab, i18n.tr("tab.receive"))
-        self._build_language_selector()
-
-        self.advanced_button = QPushButton(i18n.tr("menu.advanced"))
-        self.advanced_menu = QMenu(self)
-        self.advanced_button.setMenu(self.advanced_menu)
-        self._update_advanced_menu(self.tabs.currentIndex())  # peuple le menu pour l'onglet courant (0)
-
-        central = QWidget()
-        central_layout = QVBoxLayout(central)
-        central_layout.addWidget(self.tabs)
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.advanced_button)
-        button_row.addStretch()
-        central_layout.addLayout(button_row)
-        self.setCentralWidget(central)
-
-        # Connecté puis appliqué seulement une fois self.advanced_menu prêt : sinon,
-        # passer initial_tab=1 déclencherait _update_advanced_menu avant que le menu
-        # n'existe (AttributeError), ce qui plantait le changement de langue à chaud
-        # quand on se trouvait sur l'onglet Recevoir.
-        self.tabs.currentChanged.connect(self._update_advanced_menu)
         self.tabs.setCurrentIndex(initial_tab)
+        self._build_language_selector()
+        self.setCentralWidget(self.tabs)
 
     def _build_language_selector(self):
         self.language_combo = QComboBox()
@@ -76,29 +58,6 @@ class MainWindow(QMainWindow):
             lambda index: self._change_language(self.language_combo.itemData(index))
         )
         self.tabs.setCornerWidget(self.language_combo)
-
-    def _update_advanced_menu(self, index: int):
-        self.advanced_menu.clear()
-        if index == SEND_TAB_INDEX:
-            pixeldrain_menu = self.advanced_menu.addMenu(i18n.tr("menu.pixeldrain"))
-            pixeldrain_menu.addAction(i18n.tr("menu.pixeldrain.api_key"), self.send_tab.open_settings_dialog)
-            pixeldrain_menu.addAction(i18n.tr("menu.pixeldrain.manage_uploads"), self._open_uploads_manager)
-
-            self.advanced_menu.addSeparator()
-            manual_menu = self.advanced_menu.addMenu(i18n.tr("menu.manual_sharing"))
-            manual_menu.addAction(i18n.tr("menu.manual_sharing.export_json"), self.send_tab.export_json)
-            manual_menu.addAction(i18n.tr("menu.manual_sharing.copy_links"), self.send_tab.copy_workshop_links)
-            manual_menu.addAction(i18n.tr("menu.manual_sharing.create_archive"), self.send_tab.create_archive)
-        else:
-            self.advanced_menu.addAction(i18n.tr("installed.menu_item"), self.receive_tab.show_installed_mods)
-            self.advanced_menu.addAction(i18n.tr("receive.import_menu_item"), self.receive_tab.import_zip)
-
-    def _open_uploads_manager(self):
-        api_key = self.send_tab.ensure_api_key()
-        if not api_key:
-            return
-        dialog = UploadsManagerDialog(self, api_key)
-        dialog.exec()
 
     def _change_language(self, language: str):
         if language == i18n.current_language():

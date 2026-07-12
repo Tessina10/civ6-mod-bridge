@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTreeWidget,
@@ -28,6 +29,7 @@ import steam_locator
 import workers
 from progress_dialog import ProgressDialog
 from settings_dialog import SettingsDialog
+from uploads_manager import UploadsManagerDialog
 
 PIXELDRAIN_API_KEYS_URL = "https://pixeldrain.com/user/api_keys"
 
@@ -46,6 +48,16 @@ class SendTab(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+
+        # Bouton "Options avancées" en tout premier, juste sous la barre d'onglets.
+        advanced_row = QHBoxLayout()
+        self.advanced_button = QPushButton(i18n.tr("menu.advanced"))
+        self.advanced_menu = QMenu(self)
+        self._populate_advanced_menu()
+        self.advanced_button.setMenu(self.advanced_menu)
+        advanced_row.addWidget(self.advanced_button)
+        advanced_row.addStretch()
+        layout.addLayout(advanced_row)
 
         top_row = QHBoxLayout()
         top_row.addWidget(QLabel(i18n.tr("send.workshop_folder_label")))
@@ -117,7 +129,18 @@ class SendTab(QWidget):
         self.choose_button.setEnabled(enabled)
         self.send_link_button.setEnabled(enabled)
 
-    # --- Menu "Options avancées" : Pixeldrain ---------------------------------
+    # --- Menu "Options avancées" ------------------------------------------------
+
+    def _populate_advanced_menu(self):
+        pixeldrain_menu = self.advanced_menu.addMenu(i18n.tr("menu.pixeldrain"))
+        pixeldrain_menu.addAction(i18n.tr("menu.pixeldrain.api_key"), self.open_settings_dialog)
+        pixeldrain_menu.addAction(i18n.tr("menu.pixeldrain.manage_uploads"), self._open_uploads_manager)
+
+        self.advanced_menu.addSeparator()
+        manual_menu = self.advanced_menu.addMenu(i18n.tr("menu.manual_sharing"))
+        manual_menu.addAction(i18n.tr("menu.manual_sharing.export_json"), self.export_json)
+        manual_menu.addAction(i18n.tr("menu.manual_sharing.copy_links"), self.copy_workshop_links)
+        manual_menu.addAction(i18n.tr("menu.manual_sharing.create_archive"), self.create_archive)
 
     def open_settings_dialog(self) -> str | None:
         dialog = SettingsDialog(self)
@@ -132,7 +155,12 @@ class SendTab(QWidget):
         QMessageBox.information(self, i18n.tr("common.info"), i18n.tr("settings.required_info"))
         return self.open_settings_dialog()
 
-    # --- Menu "Options avancées" : partage manuel -----------------------------
+    def _open_uploads_manager(self):
+        api_key = self.ensure_api_key()
+        if not api_key:
+            return
+        dialog = UploadsManagerDialog(self, api_key)
+        dialog.exec()
 
     def export_json(self):
         if not self.mods_data:
