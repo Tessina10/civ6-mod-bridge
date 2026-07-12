@@ -145,6 +145,7 @@ class SendTab(QWidget):
 
     def _set_controls_enabled(self, enabled: bool):
         self.choose_button.setEnabled(enabled)
+        self.scan_button.setEnabled(enabled)
         self.send_link_button.setEnabled(enabled and bool(self.mods_data))
 
     # --- État "continue en arrière-plan" -----------------------------------------
