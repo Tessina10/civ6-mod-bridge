@@ -7,6 +7,7 @@ import threading
 import time
 import tkinter as tk
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
@@ -42,16 +43,70 @@ def _sanitize_folder_name(name: str) -> str:
     return name or "mod"
 
 
-def _write_mods_zip(path: Path, mods_data: list[dict]) -> None:
-    """Zippe les dossiers des mods donnés dans l'archive `path`."""
+def _format_size(num_bytes: int) -> str:
+    """Formate une taille en octets en chaîne lisible (Ko/Mo/Go)."""
+    size = float(num_bytes)
+    for unit in ("o", "Ko", "Mo", "Go"):
+        if size < 1024 or unit == "Go":
+            return f"{size:.0f} {unit}" if unit == "o" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} Go"
+
+
+def _format_upload_date(date_upload: str) -> str:
+    """Formate une date ISO 8601 renvoyée par l'API Pixeldrain en chaîne lisible."""
+    try:
+        return datetime.fromisoformat(date_upload).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return date_upload or "?"
+
+
+def _collect_mod_files(mods_data: list[dict]) -> list[tuple[Path, Path]]:
+    """Liste (chemin réel, chemin dans l'archive) de tous les fichiers des mods donnés."""
+    entries = []
+    for mod in mods_data:
+        mod_folder = Path(mod["path"])
+        top_name = f"{mod['id']}_{_sanitize_folder_name(mod['title'])}"
+        for file_path in mod_folder.rglob("*"):
+            if file_path.is_file():
+                arcname = Path(top_name) / file_path.relative_to(mod_folder)
+                entries.append((file_path, arcname))
+    return entries
+
+
+def _write_mods_zip(path: Path, mods_data: list[dict], on_progress=None) -> None:
+    """Zippe les dossiers des mods donnés dans l'archive `path`.
+    `on_progress(fait, total)` est appelé après chaque fichier écrit, si fourni."""
+    entries = _collect_mod_files(mods_data)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for mod in mods_data:
-            mod_folder = Path(mod["path"])
-            top_name = f"{mod['id']}_{_sanitize_folder_name(mod['title'])}"
-            for file_path in mod_folder.rglob("*"):
-                if file_path.is_file():
-                    arcname = Path(top_name) / file_path.relative_to(mod_folder)
-                    zf.write(file_path, arcname)
+        for i, (file_path, arcname) in enumerate(entries, start=1):
+            zf.write(file_path, arcname)
+            if on_progress:
+                on_progress(i, len(entries))
+
+
+def _open_progress_dialog(parent: tk.Misc, title: str, message: str):
+    """Ouvre une pop-up modale avec un message et une barre de progression.
+    Retourne (dialog, progressbar, message_var) ; le worker met à jour ces
+    éléments via `parent.after(0, ...)` puis détruit `dialog` à la fin."""
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    frame = ttk.Frame(dialog, padding=16)
+    frame.pack(fill="both", expand=True)
+
+    message_var = tk.StringVar(value=message)
+    ttk.Label(frame, textvariable=message_var, wraplength=360, justify="left").pack(anchor="w", pady=(0, 10))
+
+    progress = ttk.Progressbar(frame, mode="determinate", length=360, maximum=100)
+    progress.pack(fill="x")
+
+    _center_toplevel(dialog, parent)
+    return dialog, progress, message_var
 
 
 class App(tk.Tk):
@@ -64,8 +119,36 @@ class App(tk.Tk):
         self.content_folder: Path | None = None
         self.mods_data: list[dict] = []
 
+        self._uploads_window: tk.Toplevel | None = None
+        self._uploads_tree: ttk.Treeview | None = None
+        self._uploads_api_key: str | None = None
+
+        self._build_menu()
         self._build_ui()
         self._auto_detect()
+
+    def _build_menu(self):
+        menubar = tk.Menu(self)
+
+        advanced_menu = tk.Menu(menubar, tearoff=False)
+
+        pixeldrain_menu = tk.Menu(advanced_menu, tearoff=False)
+        pixeldrain_menu.add_command(label="Clé API...", command=lambda: self._open_settings_dialog())
+        pixeldrain_menu.add_command(label="Gérer mes envois...", command=self._open_manage_uploads_window)
+        advanced_menu.add_cascade(label="Pixeldrain", menu=pixeldrain_menu)
+
+        advanced_menu.add_separator()
+
+        manual_sharing_menu = tk.Menu(advanced_menu, tearoff=False)
+        manual_sharing_menu.add_command(label="Exporter en JSON...", command=self._export_file)
+        manual_sharing_menu.add_command(label="Copier les liens Workshop", command=self._copy_clipboard)
+        manual_sharing_menu.add_command(label="Créer une archive .zip...", command=self._create_archive)
+        advanced_menu.add_cascade(label="Partage manuel", menu=manual_sharing_menu)
+
+        menubar.add_cascade(label="Options avancées", menu=advanced_menu)
+
+        self.config(menu=menubar)
+        self.menubar = menubar
 
     def _build_ui(self):
         top = ttk.Frame(self, padding=8)
@@ -80,19 +163,10 @@ class App(tk.Tk):
         action_bar = ttk.Frame(self, padding=8)
         action_bar.pack(fill="x")
         ttk.Button(action_bar, text="Scanner", command=self._scan).pack(side="left")
-        ttk.Button(action_bar, text="Exporter vers fichier...", command=self._export_file).pack(side="left", padx=6)
-        ttk.Button(action_bar, text="Copier la liste", command=self._copy_clipboard).pack(side="left")
-        self.archive_button = ttk.Button(
-            action_bar, text="Créer une archive (.zip)...", command=self._create_archive
-        )
-        self.archive_button.pack(side="left", padx=6)
         self.send_link_button = ttk.Button(
             action_bar, text="Envoyer à un ami (lien)...", command=self._send_link
         )
-        self.send_link_button.pack(side="left")
-        ttk.Button(action_bar, text="Paramètres...", command=lambda: self._open_settings_dialog()).pack(
-            side="left", padx=6
-        )
+        self.send_link_button.pack(side="left", padx=6)
 
         table_frame = ttk.Frame(self, padding=8)
         table_frame.pack(fill="both", expand=True)
@@ -209,28 +283,33 @@ class App(tk.Tk):
             return
 
         mods_data = list(self.mods_data)
-        self.archive_button.state(["disabled"])
-        self.status_var.set(
-            "Création de l'archive EN COURS, merci de patienter et de ne pas fermer "
-            "l'application (peut prendre plusieurs minutes selon la taille des mods)..."
+        self.menubar.entryconfig("Options avancées", state="disabled")
+        dialog, progress, _message_var = _open_progress_dialog(
+            self, "Création de l'archive", "Compression des mods..."
         )
 
         def worker():
+            def on_progress(done, total):
+                percent = (done / total * 100) if total else 0
+                self.after(0, lambda: progress.configure(value=percent))
+
             try:
-                _write_mods_zip(Path(path), mods_data)
+                _write_mods_zip(Path(path), mods_data, on_progress=on_progress)
             except OSError as exc:
                 # Python supprime `exc` à la sortie du bloc except : on capture le
                 # message dans une variable normale avant de la fermer dans failed().
                 error_message = str(exc)
                 def failed():
+                    dialog.destroy()
                     self.status_var.set("")
-                    self.archive_button.state(["!disabled"])
+                    self.menubar.entryconfig("Options avancées", state="normal")
                     messagebox.showerror("Erreur", f"Impossible de créer l'archive : {error_message}")
                 self.after(0, failed)
                 return
 
             def done():
-                self.archive_button.state(["!disabled"])
+                dialog.destroy()
+                self.menubar.entryconfig("Options avancées", state="normal")
                 self.status_var.set(f"Archive créée : {path}")
                 messagebox.showinfo(
                     "Archive créée",
@@ -327,8 +406,11 @@ class App(tk.Tk):
             justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
-        link_var = tk.StringVar(value=link)
-        entry = ttk.Entry(frame, textvariable=link_var, width=52, state="readonly")
+        # Référence gardée sur self : une StringVar purement locale serait détruite
+        # par Python dès la fin de cette méthode (elle ne bloque pas comme
+        # _open_settings_dialog), ce qui viderait visuellement le champ.
+        self._link_dialog_var = tk.StringVar(value=link)
+        entry = ttk.Entry(frame, textvariable=self._link_dialog_var, width=52, state="readonly")
         entry.pack(fill="x")
 
         def copy_link():
@@ -353,23 +435,40 @@ class App(tk.Tk):
 
         mods_data = list(self.mods_data)
         self.send_link_button.state(["disabled"])
-        self.status_var.set(
-            "Compression puis envoi EN COURS, merci de patienter et de ne pas fermer "
-            "l'application (peut prendre plusieurs minutes selon la taille des mods)..."
+        self.menubar.entryconfig("Options avancées", state="disabled")
+        dialog, progress, message_var = _open_progress_dialog(
+            self, "Envoi en cours", "Compression des mods..."
         )
 
         def worker():
             tmp_path = Path(tempfile.gettempdir()) / f"civ6_mods_pour_ami_{int(time.time())}.zip"
+
+            def on_zip_progress(done, total):
+                percent = (done / total * 100) if total else 0
+                self.after(0, lambda: progress.configure(value=percent))
+
             try:
-                _write_mods_zip(tmp_path, mods_data)
+                _write_mods_zip(tmp_path, mods_data, on_progress=on_zip_progress)
+
+                def switch_to_upload():
+                    progress.configure(mode="indeterminate")
+                    progress.start(15)
+                    message_var.set(
+                        "Envoi vers Pixeldrain en cours (durée variable selon ta connexion)..."
+                    )
+                self.after(0, switch_to_upload)
+
                 link = pixeldrain_client.upload_file(tmp_path, api_key)
             except (OSError, pixeldrain_client.PixeldrainError) as exc:
                 # Python supprime `exc` à la sortie du bloc except : on capture le
                 # message dans une variable normale avant de la fermer dans failed().
                 error_message = str(exc)
                 def failed():
+                    progress.stop()
+                    dialog.destroy()
                     self.status_var.set("")
                     self.send_link_button.state(["!disabled"])
+                    self.menubar.entryconfig("Options avancées", state="normal")
                     messagebox.showerror(
                         "Erreur",
                         f"Impossible d'envoyer les mods : {error_message}\n\n"
@@ -384,9 +483,169 @@ class App(tk.Tk):
                 pass
 
             def done():
+                progress.stop()
+                dialog.destroy()
                 self.send_link_button.state(["!disabled"])
+                self.menubar.entryconfig("Options avancées", state="normal")
                 self.status_var.set(f"Lien créé avec {len(mods_data)} mod(s).")
                 self._show_link_dialog(link)
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _open_manage_uploads_window(self):
+        if self._uploads_window is not None and self._uploads_window.winfo_exists():
+            self._uploads_window.lift()
+            self._refresh_uploads_list()
+            return
+
+        api_key = self._ensure_api_key()
+        if not api_key:
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Gérer mes envois Pixeldrain")
+        win.geometry("640x400")
+        win.minsize(560, 320)
+
+        action_bar = ttk.Frame(win, padding=8)
+        action_bar.pack(fill="x")
+        self._uploads_refresh_button = ttk.Button(
+            action_bar, text="Rafraîchir", command=self._refresh_uploads_list
+        )
+        self._uploads_refresh_button.pack(side="left")
+        self._uploads_delete_selection_button = ttk.Button(
+            action_bar, text="Supprimer la sélection", command=lambda: self._delete_uploads(selection_only=True)
+        )
+        self._uploads_delete_selection_button.pack(side="left", padx=6)
+        self._uploads_delete_all_button = ttk.Button(
+            action_bar, text="Tout supprimer", command=lambda: self._delete_uploads(selection_only=False)
+        )
+        self._uploads_delete_all_button.pack(side="left")
+
+        table_frame = ttk.Frame(win, padding=8)
+        table_frame.pack(fill="both", expand=True)
+        columns = ("name", "size", "date")
+        tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="extended")
+        tree.heading("name", text="Nom")
+        tree.heading("size", text="Taille")
+        tree.heading("date", text="Date d'envoi")
+        tree.column("name", width=320)
+        tree.column("size", width=100, anchor="center")
+        tree.column("date", width=150, anchor="center")
+        tree.pack(fill="both", expand=True, side="left")
+
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        scrollbar.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        self._uploads_status_var = tk.StringVar(value="")
+        ttk.Label(win, textvariable=self._uploads_status_var, padding=8).pack(fill="x")
+
+        self._uploads_window = win
+        self._uploads_tree = tree
+        self._uploads_api_key = api_key
+        _center_toplevel(win, self)
+        self._refresh_uploads_list()
+
+    def _set_uploads_controls_enabled(self, enabled: bool):
+        state = ["!disabled"] if enabled else ["disabled"]
+        self._uploads_refresh_button.state(state)
+        self._uploads_delete_selection_button.state(state)
+        self._uploads_delete_all_button.state(state)
+
+    def _refresh_uploads_list(self):
+        if self._uploads_tree is None or not self._uploads_tree.winfo_exists():
+            return
+        self._set_uploads_controls_enabled(False)
+        self._uploads_status_var.set("Chargement de la liste...")
+        api_key = self._uploads_api_key
+
+        def worker():
+            try:
+                files = pixeldrain_client.list_files(api_key)
+            except pixeldrain_client.PixeldrainError as exc:
+                # Python supprime `exc` à la sortie du bloc except : on capture le
+                # message dans une variable normale avant de la fermer dans failed().
+                error_message = str(exc)
+                def failed():
+                    self._set_uploads_controls_enabled(True)
+                    self._uploads_status_var.set("")
+                    messagebox.showerror(
+                        "Erreur", f"Impossible de récupérer la liste des envois : {error_message}"
+                    )
+                self.after(0, failed)
+                return
+
+            def done():
+                self._set_uploads_controls_enabled(True)
+                self._uploads_tree.delete(*self._uploads_tree.get_children())
+                for f in files:
+                    self._uploads_tree.insert(
+                        "", "end", iid=f["id"],
+                        values=(f["name"], _format_size(f["size"]), _format_upload_date(f.get("date_upload", ""))),
+                    )
+                self._uploads_status_var.set(f"{len(files)} fichier(s) sur le compte.")
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _delete_uploads(self, selection_only: bool):
+        if self._uploads_tree is None or not self._uploads_tree.winfo_exists():
+            return
+
+        if selection_only:
+            ids = list(self._uploads_tree.selection())
+            if not ids:
+                messagebox.showinfo(
+                    "Info", "Sélectionne au moins un fichier dans la liste.", parent=self._uploads_window
+                )
+                return
+            question = f"Supprimer les {len(ids)} fichier(s) sélectionné(s) ?\n\nCette action est irréversible."
+        else:
+            ids = list(self._uploads_tree.get_children())
+            if not ids:
+                messagebox.showinfo("Info", "Aucun fichier à supprimer.", parent=self._uploads_window)
+                return
+            question = f"Supprimer TOUS les fichiers envoyés ({len(ids)}) ?\n\nCette action est irréversible."
+
+        if not messagebox.askyesno("Confirmer la suppression", question, parent=self._uploads_window):
+            return
+
+        api_key = self._uploads_api_key
+        self._set_uploads_controls_enabled(False)
+        dialog, progress, _message_var = _open_progress_dialog(
+            self._uploads_window, "Suppression en cours", f"Suppression de {len(ids)} fichier(s)..."
+        )
+
+        def worker():
+            succeeded = 0
+            failed_count = 0
+            for i, file_id in enumerate(ids, start=1):
+                try:
+                    pixeldrain_client.delete_file(file_id, api_key)
+                    succeeded += 1
+                except pixeldrain_client.PixeldrainError:
+                    failed_count += 1
+                percent = i / len(ids) * 100
+                self.after(0, lambda p=percent: progress.configure(value=p))
+
+            def done():
+                dialog.destroy()
+                self._set_uploads_controls_enabled(True)
+                if failed_count:
+                    messagebox.showwarning(
+                        "Suppression terminée",
+                        f"{succeeded} fichier(s) supprimé(s), {failed_count} échec(s).",
+                        parent=self._uploads_window,
+                    )
+                else:
+                    messagebox.showinfo(
+                        "Suppression terminée",
+                        f"{succeeded} fichier(s) supprimé(s).",
+                        parent=self._uploads_window,
+                    )
+                self._refresh_uploads_list()
             self.after(0, done)
 
         threading.Thread(target=worker, daemon=True).start()

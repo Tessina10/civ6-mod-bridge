@@ -32,3 +32,23 @@ def test_write_mods_zip_creates_expected_archive_layout(tmp_path):
 
     assert "111_Mon Mod/Mod.modinfo" in names
     assert "111_Mon Mod/Text/fr_FR.xml" in names
+
+
+def test_format_size_bytes():
+    assert gui._format_size(0) == "0 o"
+    assert gui._format_size(512) == "512 o"
+
+
+def test_format_size_kilo_mega_giga():
+    assert gui._format_size(1536) == "1.5 Ko"
+    assert gui._format_size(5 * 1024 * 1024) == "5.0 Mo"
+    assert gui._format_size(2 * 1024 * 1024 * 1024) == "2.0 Go"
+
+
+def test_format_upload_date_parses_iso_with_z_suffix():
+    assert gui._format_upload_date("2026-07-12T00:54:44.095Z") == "2026-07-12 00:54"
+
+
+def test_format_upload_date_falls_back_to_raw_on_bad_input():
+    assert gui._format_upload_date("not-a-date") == "not-a-date"
+    assert gui._format_upload_date("") == "?"
