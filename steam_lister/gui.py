@@ -156,8 +156,10 @@ class App(tk.Tk):
         messagebox.showinfo(
             "Export réussi",
             f"Liste exportée vers :\n{path}\n\n"
-            "Envoie ce fichier à ton ami : il pourra l'importer directement via le bouton "
-            "'Importer une liste' de son application.",
+            "Ce fichier liste les ID Workshop de tes mods, à titre d'inventaire ou pour "
+            "un usage manuel — il n'y a pas encore de bouton d'import automatique côté "
+            "Epic Games. Pour un transfert automatique, utilise plutôt "
+            "'Envoyer à un ami (lien)...'.",
         )
 
     def _copy_clipboard(self):

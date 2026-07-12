@@ -151,10 +151,11 @@ Ce sont deux fichiers distincts, pas un module partagé :
    `epic_mod_manager._import_zip()` extrait une archive choisie sur le
    disque. Utile en secours si Pixeldrain est indisponible.
 3. **Liste JSON** : `steam_lister` exporte `{id, title}` de chaque mod
-   scanné vers un `.json`. ⚠️ `epic_mod_manager` n'a actuellement **aucun
-   bouton d'import de cette liste** malgré ce que dit le texte affiché côté
-   `steam_lister` ("Importer une liste" — fonctionnalité non implémentée côté
-   réception, à vérifier/compléter si on retravaille ce flux).
+   scanné vers un `.json`, à titre d'inventaire/usage manuel — `epic_mod_manager`
+   n'a pas de bouton d'import automatique pour ce fichier (le message d'export
+   ne le prétend plus depuis la correction du texte trompeur ; si ce flux est
+   retravaillé un jour, il faudra soit ajouter cet import, soit retirer
+   complètement l'option côté `steam_lister`).
 4. **Liens presse-papiers** : `steam_lister` copie des URLs
    `steamcommunity.com/sharedfiles/filedetails/?id=<id>` — usage manuel côté
    Epic (pas d'automatisation dans `epic_mod_manager`).
