@@ -40,6 +40,13 @@ def _extract_zip_to_folder(zip_path: Path, folder: Path) -> int:
     return len(top_level)
 
 
+def _center_window(window: tk.Tk, width: int, height: int) -> None:
+    """Positionne une fenêtre racine au centre de l'écran."""
+    x = (window.winfo_screenwidth() - width) // 2
+    y = (window.winfo_screenheight() - height) // 2
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
+
 def _default_mods_folder() -> Path:
     system = platform.system()
     if system == "Windows":
@@ -53,7 +60,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Scanner de mods Civilization VI (versions installées)")
-        self.geometry("640x420")
+        _center_window(self, 640, 420)
         self.minsize(560, 360)
 
         self._build_ui()

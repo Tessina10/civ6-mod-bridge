@@ -18,6 +18,23 @@ import steam_locator
 PIXELDRAIN_API_KEYS_URL = "https://pixeldrain.com/user/api_keys"
 
 
+def _center_window(window: tk.Tk, width: int, height: int) -> None:
+    """Positionne une fenêtre racine au centre de l'écran."""
+    x = (window.winfo_screenwidth() - width) // 2
+    y = (window.winfo_screenheight() - height) // 2
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
+
+def _center_toplevel(window: tk.Toplevel, parent: tk.Misc) -> None:
+    """Centre une fenêtre secondaire (dialogue) par rapport à sa fenêtre parente."""
+    window.update_idletasks()
+    width = window.winfo_reqwidth()
+    height = window.winfo_reqheight()
+    x = parent.winfo_x() + (parent.winfo_width() - width) // 2
+    y = parent.winfo_y() + (parent.winfo_height() - height) // 2
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
+
 def _sanitize_folder_name(name: str) -> str:
     """Nettoie un titre de mod pour en faire un nom de dossier valide dans l'archive."""
     name = re.sub(r"[^\w\-. ]", "_", name).strip()
@@ -41,7 +58,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Lister mes mods Civilization VI (Steam)")
-        self.geometry("760x480")
+        _center_window(self, 760, 480)
         self.minsize(640, 400)
 
         self.content_folder: Path | None = None
@@ -276,6 +293,7 @@ class App(tk.Tk):
         ttk.Button(button_bar, text="Enregistrer", command=on_save).pack(side="right", padx=6)
 
         dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        _center_toplevel(dialog, self)
         self.wait_window(dialog)
         return result["key"]
 
@@ -321,6 +339,8 @@ class App(tk.Tk):
         button_bar.pack(fill="x", pady=(10, 0))
         ttk.Button(button_bar, text="Fermer", command=dialog.destroy).pack(side="right")
         ttk.Button(button_bar, text="Copier le lien", command=copy_link).pack(side="right", padx=6)
+
+        _center_toplevel(dialog, self)
 
     def _send_link(self):
         if not self.mods_data:
