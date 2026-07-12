@@ -99,7 +99,10 @@ class DownloadInstallWorker(QThread):
 
     def run(self):
         try:
-            with urllib.request.urlopen(self.download_url) as response, open(self.tmp_path, "wb") as f:
+            with (
+                urllib.request.urlopen(self.download_url, timeout=pixeldrain_client.TIMEOUT_SECONDS) as response,
+                open(self.tmp_path, "wb") as f,
+            ):
                 total_header = response.headers.get("Content-Length")
                 total = int(total_header) if total_header else None
                 if total is None:

@@ -9,11 +9,30 @@ from pathlib import Path
 UPLOAD_URL = "https://pixeldrain.com/api/file/"
 FILE_URL_TEMPLATE = "https://pixeldrain.com/api/file/{file_id}"
 USER_FILES_URL = "https://pixeldrain.com/api/user/files"
+API_KEYS_PAGE_URL = "https://pixeldrain.com/user/api_keys"
 MAX_REDIRECTS = 5
+# Timeout pour les appels légers (listing, suppression) : évite qu'une connexion
+# acceptée mais qui ne répond jamais laisse la pop-up de progression figée
+# indéfiniment.
+TIMEOUT_SECONDS = 30
+# `socket.sendall()` (utilisé sous le capot pour envoyer le corps d'un PUT)
+# applique le timeout à la durée totale de l'envoi, pas par appel bloquant :
+# avec TIMEOUT_SECONDS un envoi de plusieurs Mo sur une connexion modeste
+# dépasse la limite et échoue en plein milieu ("write operation timed out"),
+# constaté en test avec une vraie archive de mods. Un timeout beaucoup plus
+# généreux est donc nécessaire spécifiquement pour l'upload.
+UPLOAD_TIMEOUT_SECONDS = 600
 
 
 class PixeldrainError(Exception):
     """Erreur lors d'un appel à l'API Pixeldrain."""
+
+
+def _read_json(response) -> dict:
+    try:
+        return json.loads(response.read().decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise PixeldrainError(f"Réponse Pixeldrain illisible : {exc}") from exc
 
 
 def _auth_header(api_key: str) -> dict:
@@ -35,8 +54,8 @@ def upload_file(path: Path, api_key: str) -> str:
     for _ in range(MAX_REDIRECTS):
         request = urllib.request.Request(url, method="PUT", headers=headers, data=data)
         try:
-            with urllib.request.urlopen(request) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+            with urllib.request.urlopen(request, timeout=UPLOAD_TIMEOUT_SECONDS) as response:
+                payload = _read_json(response)
             break
         except urllib.error.HTTPError as exc:
             if exc.code in (307, 308):
@@ -50,6 +69,10 @@ def upload_file(path: Path, api_key: str) -> str:
             raise PixeldrainError(f"Erreur Pixeldrain ({exc.code}) : {exc.reason}") from exc
         except urllib.error.URLError as exc:
             raise PixeldrainError(f"Impossible de contacter Pixeldrain : {exc.reason}") from exc
+        except OSError as exc:
+            # Ex. timeout de lecture en cours de réponse, une fois les en-têtes déjà
+            # reçus (URLError ne couvre que l'échec de connexion/requête initiale).
+            raise PixeldrainError(f"Erreur réseau avec Pixeldrain : {exc}") from exc
     else:
         raise PixeldrainError("Trop de redirections lors de l'envoi vers Pixeldrain.")
 
@@ -63,14 +86,16 @@ def list_files(api_key: str) -> list[dict]:
     """Retourne la liste des fichiers déjà envoyés sur le compte (jusqu'à 50000)."""
     request = urllib.request.Request(USER_FILES_URL, method="GET", headers=_auth_header(api_key))
     try:
-        with urllib.request.urlopen(request) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = _read_json(response)
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             raise PixeldrainError("Clé API invalide ou refusée par Pixeldrain (erreur 401).") from exc
         raise PixeldrainError(f"Erreur Pixeldrain ({exc.code}) : {exc.reason}") from exc
     except urllib.error.URLError as exc:
         raise PixeldrainError(f"Impossible de contacter Pixeldrain : {exc.reason}") from exc
+    except OSError as exc:
+        raise PixeldrainError(f"Erreur réseau avec Pixeldrain : {exc}") from exc
 
     return payload.get("files", [])
 
@@ -81,10 +106,12 @@ def delete_file(file_id: str, api_key: str) -> None:
         FILE_URL_TEMPLATE.format(file_id=file_id), method="DELETE", headers=_auth_header(api_key)
     )
     try:
-        urllib.request.urlopen(request).close()
+        urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS).close()
     except urllib.error.HTTPError as exc:
         if exc.code == 403:
             raise PixeldrainError("Ce fichier n'appartient pas à ce compte (erreur 403).") from exc
         raise PixeldrainError(f"Erreur Pixeldrain ({exc.code}) : {exc.reason}") from exc
     except urllib.error.URLError as exc:
         raise PixeldrainError(f"Impossible de contacter Pixeldrain : {exc.reason}") from exc
+    except OSError as exc:
+        raise PixeldrainError(f"Erreur réseau avec Pixeldrain : {exc}") from exc

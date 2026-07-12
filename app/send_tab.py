@@ -31,8 +31,6 @@ from progress_dialog import ProgressDialog
 from settings_dialog import SettingsDialog
 from uploads_manager import UploadsManagerDialog
 
-PIXELDRAIN_API_KEYS_URL = "https://pixeldrain.com/user/api_keys"
-
 
 class SendTab(QWidget):
     def __init__(self, parent=None):
@@ -42,9 +40,11 @@ class SendTab(QWidget):
         self._archive_worker: workers.CreateArchiveWorker | None = None
         self._send_worker: workers.SendLinkWorker | None = None
         self._progress_dialog: ProgressDialog | None = None
+        self._background_active = False
 
         self._build_ui()
         self._auto_detect()
+        self._update_api_key_banner()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -58,6 +58,15 @@ class SendTab(QWidget):
         advanced_row.addWidget(self.advanced_button)
         advanced_row.addStretch()
         layout.addLayout(advanced_row)
+
+        banner_row = QHBoxLayout()
+        self.api_key_banner_label = QLabel(i18n.tr("send.api_key_banner"))
+        self.api_key_banner_label.setWordWrap(True)
+        banner_row.addWidget(self.api_key_banner_label, stretch=1)
+        self.api_key_banner_button = QPushButton(i18n.tr("send.api_key_banner_button"))
+        self.api_key_banner_button.clicked.connect(self.open_settings_dialog)
+        banner_row.addWidget(self.api_key_banner_button)
+        layout.addLayout(banner_row)
 
         top_row = QHBoxLayout()
         top_row.addWidget(QLabel(i18n.tr("send.workshop_folder_label")))
@@ -78,6 +87,9 @@ class SendTab(QWidget):
         bold_font.setBold(True)
         self.send_link_button.setFont(bold_font)
         self.send_link_button.clicked.connect(self._send_link)
+        # Désactivé tant qu'aucun scan n'a produit de mods à envoyer, pour guider
+        # l'ordre des étapes plutôt que de laisser cliquer puis afficher une erreur.
+        self.send_link_button.setEnabled(False)
         action_row.addWidget(self.send_link_button)
         action_row.addStretch()
         layout.addLayout(action_row)
@@ -112,6 +124,11 @@ class SendTab(QWidget):
             self.content_folder = Path(folder)
             self.folder_edit.setText(folder)
             self.status_label.setText(i18n.tr("send.status_manual_set"))
+            # Le dossier a changé : les mods déjà scannés ne sont plus valables,
+            # il faut rescanner avant de pouvoir envoyer à nouveau.
+            self.mods_data = []
+            self.tree.clear()
+            self.send_link_button.setEnabled(False)
 
     def _scan(self):
         if not self.content_folder or not self.content_folder.exists():
@@ -124,10 +141,21 @@ class SendTab(QWidget):
                 QTreeWidgetItem([mod["title"], mod["id"], mod["version"] or "?"])
             )
         self.status_label.setText(i18n.tr("send.status_scan_result", count=len(self.mods_data)))
+        self.send_link_button.setEnabled(bool(self.mods_data))
 
     def _set_controls_enabled(self, enabled: bool):
         self.choose_button.setEnabled(enabled)
-        self.send_link_button.setEnabled(enabled)
+        self.send_link_button.setEnabled(enabled and bool(self.mods_data))
+
+    # --- État "continue en arrière-plan" -----------------------------------------
+
+    def _on_continued_in_background(self):
+        self._background_active = True
+        self._on_background_message_changed(self._progress_dialog.current_message())
+
+    def _on_background_message_changed(self, message: str):
+        if self._background_active:
+            self.status_label.setText(i18n.tr("progress.background_status", message=message))
 
     # --- Menu "Options avancées" ------------------------------------------------
 
@@ -142,11 +170,16 @@ class SendTab(QWidget):
         manual_menu.addAction(i18n.tr("menu.manual_sharing.copy_links"), self.copy_workshop_links)
         manual_menu.addAction(i18n.tr("menu.manual_sharing.create_archive"), self.create_archive)
 
+    def _update_api_key_banner(self):
+        has_key = bool(config.load_api_key())
+        self.api_key_banner_label.setVisible(not has_key)
+        self.api_key_banner_button.setVisible(not has_key)
+
     def open_settings_dialog(self) -> str | None:
         dialog = SettingsDialog(self)
-        if dialog.exec():
-            return config.load_api_key()
-        return None
+        result = config.load_api_key() if dialog.exec() else None
+        self._update_api_key_banner()
+        return result
 
     def ensure_api_key(self) -> str | None:
         key = config.load_api_key()
@@ -205,9 +238,12 @@ class SendTab(QWidget):
 
         mods_data = list(self.mods_data)
         self._set_controls_enabled(False)
+        self._background_active = False
         self._progress_dialog = ProgressDialog(
             self, i18n.tr("send.archive_progress_title"), i18n.tr("send.compressing")
         )
+        self._progress_dialog.continued_in_background.connect(self._on_continued_in_background)
+        self._progress_dialog.message_changed.connect(self._on_background_message_changed)
         self._archive_worker = workers.CreateArchiveWorker(Path(path), mods_data)
         self._archive_worker.progress.connect(self._progress_dialog.set_progress)
         self._archive_worker.succeeded.connect(lambda p: self._on_archive_succeeded(p, len(mods_data)))
@@ -218,6 +254,7 @@ class SendTab(QWidget):
     def _on_archive_succeeded(self, path: str, count: int):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText(i18n.tr("send.archive_done_status", path=path))
         QMessageBox.information(
             self, i18n.tr("send.archive_done_title"), i18n.tr("send.archive_done_message", count=count, path=path)
@@ -226,6 +263,7 @@ class SendTab(QWidget):
     def _on_archive_failed(self, message: str):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText("")
         QMessageBox.critical(self, i18n.tr("common.error"), i18n.tr("send.archive_error", error=message))
 
@@ -242,7 +280,10 @@ class SendTab(QWidget):
         mods_data = list(self.mods_data)
         tmp_path = Path(tempfile.gettempdir()) / f"civ6_mods_pour_ami_{int(time.time())}.zip"
         self._set_controls_enabled(False)
+        self._background_active = False
         self._progress_dialog = ProgressDialog(self, i18n.tr("send.link_progress_title"), i18n.tr("send.compressing"))
+        self._progress_dialog.continued_in_background.connect(self._on_continued_in_background)
+        self._progress_dialog.message_changed.connect(self._on_background_message_changed)
         self._send_worker = workers.SendLinkWorker(tmp_path, mods_data, api_key)
         self._send_worker.progress.connect(self._progress_dialog.set_progress)
         self._send_worker.phase_changed.connect(self._on_send_phase_changed)
@@ -259,12 +300,14 @@ class SendTab(QWidget):
     def _on_send_succeeded(self, link: str, count: int):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText(i18n.tr("send.link_done_status", count=count))
         self._show_link_dialog(link)
 
     def _on_send_failed(self, message: str, tmp_path: Path):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText("")
         QMessageBox.critical(
             self, i18n.tr("common.error"), i18n.tr("send.link_error", error=message, path=str(tmp_path))

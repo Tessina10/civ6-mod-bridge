@@ -10,8 +10,7 @@ from PySide6.QtWidgets import (
 
 import config
 import i18n
-
-PIXELDRAIN_API_KEYS_URL = "https://pixeldrain.com/user/api_keys"
+import pixeldrain_client
 
 
 class SettingsDialog(QDialog):
@@ -23,7 +22,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(i18n.tr("settings.api_key_label")))
-        hint = QLabel(i18n.tr("settings.api_key_hint", url=PIXELDRAIN_API_KEYS_URL))
+        hint = QLabel(i18n.tr("settings.api_key_hint", url=pixeldrain_client.API_KEYS_PAGE_URL))
         hint.setWordWrap(True)
         hint.setOpenExternalLinks(True)
         layout.addWidget(hint)

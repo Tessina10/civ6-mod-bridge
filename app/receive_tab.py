@@ -42,6 +42,7 @@ class ReceiveTab(QWidget):
         self._import_worker: workers.ImportZipWorker | None = None
         self._progress_dialog: ProgressDialog | None = None
         self._installed_dialog: InstalledModsDialog | None = None
+        self._background_active = False
 
         self._build_ui()
         self._auto_detect()
@@ -108,6 +109,16 @@ class ReceiveTab(QWidget):
         self.choose_button.setEnabled(enabled)
         self.install_button.setEnabled(enabled)
 
+    # --- État "continue en arrière-plan" -----------------------------------------
+
+    def _on_continued_in_background(self):
+        self._background_active = True
+        self._on_background_message_changed(self._progress_dialog.current_message())
+
+    def _on_background_message_changed(self, message: str):
+        if self._background_active:
+            self.status_label.setText(i18n.tr("progress.background_status", message=message))
+
     def _refresh_installed_dialog_if_open(self):
         if self._installed_dialog is not None and self._installed_dialog.isVisible():
             self._installed_dialog.refresh(self.folder_edit.text())
@@ -138,9 +149,12 @@ class ReceiveTab(QWidget):
 
         folder = Path(folder_str)
         self._set_controls_enabled(False)
+        self._background_active = False
         self._progress_dialog = ProgressDialog(
             self, i18n.tr("receive.import_progress_title"), i18n.tr("receive.extracting")
         )
+        self._progress_dialog.continued_in_background.connect(self._on_continued_in_background)
+        self._progress_dialog.message_changed.connect(self._on_background_message_changed)
         self._import_worker = workers.ImportZipWorker(Path(zip_path), folder)
         self._import_worker.progress.connect(self._progress_dialog.set_progress)
         self._import_worker.succeeded.connect(self._on_import_succeeded)
@@ -151,6 +165,7 @@ class ReceiveTab(QWidget):
     def _on_import_succeeded(self, count: int, folder: str):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText(i18n.tr("receive.done_status", count=count, folder=folder))
         QMessageBox.information(
             self, i18n.tr("receive.done_title"), i18n.tr("receive.done_message", count=count, folder=folder)
@@ -160,6 +175,7 @@ class ReceiveTab(QWidget):
     def _on_import_failed(self, message: str):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText("")
         QMessageBox.critical(self, i18n.tr("common.error"), i18n.tr("receive.import_error", error=message))
 
@@ -183,9 +199,12 @@ class ReceiveTab(QWidget):
         tmp_path = Path(tempfile.gettempdir()) / f"civ6_mods_recus_{file_id}.zip"
 
         self._set_controls_enabled(False)
+        self._background_active = False
         self._progress_dialog = ProgressDialog(
             self, i18n.tr("receive.install_progress_title"), i18n.tr("receive.downloading")
         )
+        self._progress_dialog.continued_in_background.connect(self._on_continued_in_background)
+        self._progress_dialog.message_changed.connect(self._on_background_message_changed)
         self._download_worker = workers.DownloadInstallWorker(download_url, tmp_path, folder)
         self._download_worker.progress.connect(self._progress_dialog.set_progress)
         self._download_worker.indeterminate.connect(self._progress_dialog.set_indeterminate)
@@ -203,6 +222,7 @@ class ReceiveTab(QWidget):
     def _on_download_succeeded(self, count: int, folder: str):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.link_edit.clear()
         self.status_label.setText(i18n.tr("receive.done_status", count=count, folder=folder))
         QMessageBox.information(
@@ -213,5 +233,6 @@ class ReceiveTab(QWidget):
     def _on_download_failed(self, message: str):
         self._progress_dialog.close()
         self._set_controls_enabled(True)
+        self._background_active = False
         self.status_label.setText("")
         QMessageBox.critical(self, i18n.tr("common.error"), i18n.tr("receive.download_error", error=message))

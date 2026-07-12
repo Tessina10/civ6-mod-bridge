@@ -46,6 +46,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "send.no_valid_folder": "Aucun dossier Workshop valide sélectionné.",
         "send.status_scan_result": "{count} mod(s) trouvé(s).",
         "send.no_scan_yet": "Lance d'abord un scan.",
+        "send.api_key_banner": (
+            "Aucune clé Pixeldrain configurée — nécessaire pour envoyer un lien à ton ami."
+        ),
+        "send.api_key_banner_button": "Configurer...",
         "send.export_dialog_title": "Exporter la liste des mods",
         "send.export_error": "Impossible d'écrire le fichier : {error}",
         "send.export_done_title": "Export réussi",
@@ -80,6 +84,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.required_info": (
             "Pour envoyer un lien à ton ami, il faut d'abord renseigner une clé API Pixeldrain (gratuite)."
         ),
+        "progress.background_button": "Continuer en arrière-plan",
+        "progress.background_status": "{message} (toujours en cours en arrière-plan)",
         "receive.folder_label": "Dossier des mods :",
         "receive.choose_dialog_title": "Choisir le dossier Mods de Civilization VI",
         "receive.hero_instructions": "Colle ici le lien reçu de ton ami, puis clique sur Installer :",
@@ -171,6 +177,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "send.no_valid_folder": "No valid Workshop folder selected.",
         "send.status_scan_result": "{count} mod(s) found.",
         "send.no_scan_yet": "Run a scan first.",
+        "send.api_key_banner": (
+            "No Pixeldrain API key configured — needed to send a link to your friend."
+        ),
+        "send.api_key_banner_button": "Configure...",
         "send.export_dialog_title": "Export mod list",
         "send.export_error": "Could not write the file: {error}",
         "send.export_done_title": "Export successful",
@@ -204,6 +214,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.required_info": (
             "To send a link to your friend, you first need to set up a free Pixeldrain API key."
         ),
+        "progress.background_button": "Continue in background",
+        "progress.background_status": "{message} (still running in the background)",
         "receive.folder_label": "Mods folder:",
         "receive.choose_dialog_title": "Choose the Civilization VI Mods folder",
         "receive.hero_instructions": "Paste the link you received from your friend here, then click Install:",
