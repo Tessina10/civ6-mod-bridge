@@ -41,3 +41,9 @@ cd epic_mod_manager && pytest         # tests de epic_mod_manager
 ```
 
 Voir `CLAUDE.md` pour le détail de l'architecture et des conventions.
+
+## Licence
+
+Ce projet est distribué sous licence [MIT](LICENSE) : utilisation, modification
+et redistribution libres (y compris commerciales), à condition de conserver la
+mention de copyright d'origine.
